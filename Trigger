@@ -1,0 +1,142 @@
+1.......maxcontact 5............
+trigger maxContact on Contact (before insert, before update) {
+    if (Trigger.isInsert && Trigger.isBefore) {
+        Map<Id, Integer> ContactCount = new Map<Id, Integer>();
+        
+        for (Contact c : Trigger.new) {
+            if (c.AccountId != null) {
+                if (ContactCount.containsKey(c.AccountId)) {
+                    ContactCount.put(c.AccountId, ContactCount.get(c.AccountId) + 1);
+                } else {
+                    ContactCount.put(c.AccountId, 1);
+                }
+            }
+        }
+        
+        for (Contact c : Trigger.new) {
+            if (c.AccountId != null && ContactCount.containsKey(c.AccountId) && ContactCount.get(c.AccountId) > 5) {
+                c.addError('Cannot create more than 5 contacts with the same Account');
+            }
+        }
+    }
+
+    if (Trigger.isUpdate && Trigger.isBefore) {
+        Map<Id, Id> originalAccountIds = new Map<Id, Id>();
+        
+        for (Contact c : Trigger.old) {
+            originalAccountIds.put(c.Id, c.AccountId);
+        }
+        
+        for (Contact c : Trigger.new) {
+            if (c.AccountId != null && originalAccountIds.containsKey(c.Id) && originalAccountIds.get(c.Id) != c.AccountId) {
+                Integer newContactCount = 0;
+                
+                for (Contact newC : Trigger.new) {
+                    if (newC.AccountId == c.AccountId) {
+                        newContactCount++;
+                    }
+                }
+                
+                if (newContactCount > 5) {
+                    c.addError('Cannot associate more than 5 contacts with the same Account');
+                }
+            }
+        }
+    }
+}
+...................Test class...........................................
+@isTest
+public class TestMaxContactTrigger {
+    @isTest
+    static void testInsertWithMaxContactsPerAccount() {
+        Account testAccount = new Account(
+            Name = 'Test Account'
+        );
+        insert testAccount;
+        List<Contact> contactsToInsert = new List<Contact>();
+        for (Integer i = 0; i < 5; i++) {
+            contactsToInsert.add(new Contact(
+                FirstName = 'test'+ i,
+                LastName = 'singh',
+                AccountId = testAccount.Id
+            ));
+        }
+        insert contactsToInsert;
+        Contact invalidContact = new Contact(
+            FirstName = 'Jane',
+            LastName = 'Doe',
+            AccountId = testAccount.Id
+        );
+
+        Test.startTest();
+        insert invalidContact;
+        Test.stopTest();
+        
+        System.assert(invalidContact.HasErrors(), 'Insert should have been blocked for exceeding the maximum Contacts per Account.');
+        System.assertEquals('Cannot create more than 5 contacts with the same Account', invalidContact.LeadSource);
+        System.assertEquals(null, invalidContact.Id, 'Insert should not have created a Contact.');
+    }
+
+
+
+
+2*****************ContactSyncTrigger****************************
+trigger ContactSyncTrigger on Contact (after insert, after update) {
+    Set<Id> accountIdsWithPrimaryContact = new Set<Id>();
+
+    for (Contact c : Trigger.new) {
+        if (c.primary_contact_field__c && c.AccountId != null) {
+            accountIdsWithPrimaryContact.add(c.AccountId);
+        }
+    }
+
+    Map<Id, Id> PrimaryContactMap = new Map<Id, Id>();
+    for (Contact c : [SELECT Id, AccountId FROM Contact WHERE primary_contact_field__c = true AND AccountId IN :accountIdsWithPrimaryContact]) {
+        PrimaryContactMap.put(c.AccountId, c.Id);
+    }
+
+    List<Account> accountsToUpdate = new List<Account>();
+    for (Contact c : Trigger.new) {
+        if (c.primary_contact_field__c && c.AccountId != null) {
+            if (PrimaryContactMap.containsKey(c.AccountId) && PrimaryContactMap.get(c.AccountId) != c.Id) {
+                // Another primary contact exists for this Account, remove the flag
+                c.primary_contact_field__c = false;
+            } else {
+                // Update the Account's Relation_Ship_status__c field
+                accountsToUpdate.add(new Account(
+                    Id = c.AccountId,
+                    Relation_Ship_status__c = c.Relation_Ship_status__c
+                ));
+
+                PrimaryContactMap.put(c.AccountId, c.Id);
+            }
+        }
+    }
+
+    if (!accountsToUpdate.isEmpty()) {
+        update accountsToUpdate;
+    }
+}
+
+...................Test class....................................
+@isTest
+public class TestContactSyncTrigger {
+    @isTest
+    static void testPrimaryContactInsert() {
+        Account testAccount = new Account(Name = 'Test Account');
+        insert testAccount;
+        Contact primaryContact = new Contact(
+            FirstName = 'bittu',
+            LastName = 'Doe',
+            AccountId = testAccount.Id,
+            primary_contact_field__c = true,
+            Relation_Ship_status__c = 'Active'
+        );
+
+        Test.startTest();
+        insert primaryContact;
+        Test.stopTest();
+
+        testAccount = [SELECT Relation_Ship_status__c FROM Account WHERE Id = :testAccount.Id];
+        System.assertEquals('Active', testAccount.Relation_Ship_status__c);
+    }
