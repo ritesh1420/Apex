@@ -1,0 +1,97 @@
+1.Question
+Write a Trigger on Account on insert and update to search and throw error if another Account with matching Email Id and Phone Number Combination already exists
+............................................solution................................................................
+trigger AccountEmailPhoneMatching on Account (before insert, before update) {
+    Map<String, Id> existingEmailPhoneCombinations = new Map<String, Id>();
+
+    for (Account acc : [select Id, Email__c, Phone from Account where Email__c != null and Phone != null]) {
+        String combination = acc.Email__c + acc.Phone;
+        existingEmailPhoneCombinations.put(combination, acc.Id);
+    }
+
+    for (Account newAcc : Trigger.new) {
+        if (!String.isBlank(newAcc.Email__c) && !String.isBlank(newAcc.Phone)) {
+            String newCombination = newAcc.Email__c + newAcc.Phone;
+
+            if (existingEmailPhoneCombinations.containsKey(newCombination)) {
+                Id existingAccountId = existingEmailPhoneCombinations.get(newCombination);
+
+                // If the existing Account is different from the current one, throw an error
+                if (existingAccountId != newAcc.Id) {
+                    newAcc.addError('An Account with the same Email and Phone combination already exists.');
+                }
+            }
+        }
+    }
+}
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+2.Question
+Write an Apex Function to take Input of List of Contracts with following fields
+a. Start Date
+b. Term days (number of days in contract I.e., 90 days, 365 days)
+c. Cancellation Date
+d. Status - (Active or Cancelled)
+e. Iterate through the Contract to find out the contract with largest End Date
+f. End date is calculated based on Status if status = Active, then end date = start date + term days, if status = cancelled then end date is cancellation date
+-----------------------------------------------------solution----------------------------------------------------------------------------
+public class ContractWithLargestEndDate {
+    public static Contract findLargestEndDate(List<Contract> contracts) {
+        Contract contractWithLargestEndDate = null;
+        Date largestEndDate = null;
+
+        for (Contract c : contracts) {
+            Date endDate = null;
+
+            if (c.Status == 'Active') {
+                endDate = c.StartDate.addDays(Integer.valueOf(c.Term_day__c));
+            } else {
+                endDate = c.Cancellation_Date__c;
+            }
+
+            // Check if this contract has the largest end date
+            if (endDate != null && (largestEndDate == null || endDate > largestEndDate)) {
+                largestEndDate = endDate;
+                contractWithLargestEndDate = c;
+            }
+        }
+
+        return contractWithLargestEndDate;
+    }
+}
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+3.Question
+Create following Apex method that takes List of Account, and finds all the accounts which are duplicate (have same name) in the list 
+and keep the return the latest unique account with largest Created Date.
+...................................solution...........................................
+public class DublicateAccount {
+    public static List<Account> LatestUniqueAccounts(List<Account> accounts) {
+        Map<String, Account> latestAccountMap = new Map<String, Account>();
+        Set<String> duplicateNames = new Set<String>();
+
+        for (Account acc : accounts) {
+            String accountName = acc.Name;
+            if (latestAccountMap.containsKey(accountName)) {
+                Account existingAccount = latestAccountMap.get(accountName);
+                
+                if (acc.CreatedDate > existingAccount.CreatedDate) {
+                    latestAccountMap.put(accountName, acc);
+                }
+                duplicateNames.add(accountName);
+            } else {
+                // If the account name is not in the map, add it
+                latestAccountMap.put(accountName, acc);
+            }
+        }
+        
+        List<Account> result = new List<Account>();
+        
+        // Iterate through the original list to get the latest unique accounts with duplicates
+        for (Account acc : accounts) {
+            if (duplicateNames.contains(acc.Name)) {
+                result.add(latestAccountMap.get(acc.Name));
+            }
+        }
+        return result;
+    }
+}
