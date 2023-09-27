@@ -1,0 +1,35 @@
+trigger AccountRenewal on Account (before update) {
+    Map<String, Account_Renewal_Off_Settings__mdt> citySettingsMap = new Map<String, Account_Renewal_Off_Settings__mdt>();
+
+    // Quering custom metadata records
+    for (Account_Renewal_Off_Settings__mdt setting : [SELECT Account_Renewal_Status__c, City__c, Renewal_Off_Allowed__c FROM Account_Renewal_Off_Settings__mdt]) {
+        String cityKey = setting.City__c + setting.Account_Renewal_Status__c;
+        citySettingsMap.put(cityKey, setting);
+    }
+
+    for (Account acc : Trigger.new) {
+        Account oldAcc = Trigger.oldMap.get(acc.Id);
+
+        if (oldAcc.Account_Renewal_Status__c == 'Auto Renewal' && acc.Account_Renewal_Status__c == 'Manual Renewal') {
+            // Check if the Auto Renewal Off Reason is blank
+            if (String.isBlank(acc.Auto_Renewal_Off_Reasion__c)) {
+                acc.addError('Fill the Auto Renewal Off Reason before changing to Manual Renewal.');
+            } 
+            else {
+                // Appending the current date and time before the reason
+                acc.Auto_Renewal_Off_Reasion__c = Datetime.now().format() + ' -: ' + acc.Auto_Renewal_Off_Reasion__c;
+            }
+        } 
+        if (oldAcc.Account_Renewal_Status__c == 'Auto Renewal' && acc.Account_Renewal_Status__c == 'Renewal Off') {
+            String cityKey = acc.City__c + acc.Account_Renewal_Status__c; // Corrected line
+            Account_Renewal_Off_Settings__mdt citySetting = citySettingsMap.get(cityKey);
+
+            if (citySetting == null || !citySetting.Renewal_Off_Allowed__c) {
+                acc.addError('Renewal Off is not allowed for this city.');
+            }
+        }
+        if (oldAcc.Account_Renewal_Status__c == 'Manual Renewal' && acc.Account_Renewal_Status__c == 'Auto Renewal') {
+            acc.Auto_Renewal_Off_Reasion__c = null;
+        }
+    }
+}
