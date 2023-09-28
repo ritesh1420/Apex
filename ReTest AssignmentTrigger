@@ -21,7 +21,7 @@ trigger AccountRenewal on Account (before update) {
             }
         } 
         if (oldAcc.Account_Renewal_Status__c == 'Auto Renewal' && acc.Account_Renewal_Status__c == 'Renewal Off') {
-            String cityKey = acc.City__c + acc.Account_Renewal_Status__c; // Corrected line
+            String cityKey = acc.City__c + acc.Account_Renewal_Status__c;
             Account_Renewal_Off_Settings__mdt citySetting = citySettingsMap.get(cityKey);
 
             if (citySetting == null || !citySetting.Renewal_Off_Allowed__c) {
